@@ -1,0 +1,222 @@
+# Data
+
+This folder documents every dataset used by the notebooks. The datasets are **not stored in git** (the archives are large). Each one is produced by a MATLAB script in [`matlab/data_generation/`](../matlab/data_generation/), or can be downloaded from the link below.
+
+> **Download:** `<Zenodo / GitHub Releases link>`
+
+## Contents
+
+- [Overview table](#overview-table)
+- [Group A — Tabular admittance datasets (notebook 01)](#group-a--tabular-admittance-datasets-notebook-01)
+- [Group B — Time-domain step-response datasets (notebooks 02 and 03)](#group-b--time-domain-step-response-datasets-notebooks-02-and-03)
+- [Noise model and SNR definition](#noise-model-and-snr-definition)
+- [Noise profiles](#noise-profiles)
+- [Regenerating the data](#regenerating-the-data)
+- [Expected local layout](#expected-local-layout)
+
+## Overview table
+
+| Dataset | Notebook | Generator (`matlab/…`) | Default output folder / file |
+|---|---|---|---|
+| `vsc1_dense_dataset.csv` | 01 | `data_generation/zhang2023/gen_vsc1_dense_dataset.m` | `phase3_baseline_ann/data/` |
+| `vsc2_sparse_dataset1.csv` | 01 | `data_generation/zhang2023/gen_vsc2_sparse_and_dense_datasets.m` | `phase3_baseline_ann/data/` |
+| `vsc2_dense_dataset1.csv` | 01 | `data_generation/zhang2023/gen_vsc2_sparse_and_dense_datasets.m` | `phase3_baseline_ann/data/` |
+| `training_data_out777/` | 03 | `data_generation/timedomain/gen_train_vsc_family_3000.m` | `training_data_out777/` |
+| `training_data_out_worse_quality/` | 02, 03 | `data_generation/timedomain/gen_train_vsc_family_scarce150.m` | `training_data_out_worse_quality/` |
+| `vsc_data_out777/` | 02, 03 | `data_generation/timedomain/gen_ref_vsc_stepresponse.m` | `vsc_data_out777/` |
+| `vsc_data_noise_profiles_out1/` | 02, 03 | `data_generation/timedomain/gen_test_noise_profiles.m` | `vsc_data_noise_profiles_out1/` |
+| `vsc_data_out4/` | 02 | `legacy/gen_ref_vsc_stepresponse_v1.m` | `vsc_data_out/` (renamed `out4`) |
+| `training_data_out5/` | 02 | earlier revision of the VSC-family generator (see note) | — |
+| `training_data_out/` (optional) | — | `data_generation/timedomain/gen_train_random_linear_systems.m` | `training_data_out/` |
+
+**Note on `training_data_out5`.** This archive was produced by an earlier revision of the VSC-family generator and is distributed as-is. The legacy script `legacy/gen_train_vsc_family_normal_noise_v1.m` is the closest surviving version. Use the download link if you need this exact archive.
+
+---
+
+## Group A — Tabular admittance datasets (notebook 01)
+
+Used to reproduce Zhang et al. (2023). Every row is one `(frequency, operating point)` sample evaluated with `matlab/model/analytical_model.m`.
+
+**Columns (13):**
+
+```
+f, Vd, Vq, Id, Iq, Ydd_r, Ydd_i, Ydq_r, Ydq_i, Yqd_r, Yqd_i, Yqq_r, Yqq_i
+```
+
+`f` is in Hz, `Id`/`Iq` in A, `Vd`/`Vq` in V. Admittances are stored as separate real (`_r`) and imaginary (`_i`) parts, which avoids phase-wrap artifacts in the network loss.
+
+Fixed operating-point variables: `Vd = 311 V`, `Vq = 0`, `Iq = 0`.
+
+### Converter parameters
+
+| Parameter | VSC I | VSC II (paper Table I) |
+|---|---|---|
+| Filter inductance `L_f` | 1 mH | 3 mH |
+| Parasitic resistance `R_f` | 0.3 mΩ | 0.9 mΩ |
+| Current PI `K_p_i` / `K_i_i` | 10.5 / 5900 | 31.4 / 16449 |
+| PLL PI `K_p_pll` / `K_i_pll` | 1.2 / 257 | 1.4 / 324 |
+| Sampling `T_s` | 1/20000 s | 1/10000 s |
+| `V_d,ss` | 311 V | 311 V |
+
+### `vsc1_dense_dataset.csv`
+
+- Dense, noise-free grid for VSC I.
+- Frequency: 1–100 Hz in 1 Hz steps. Current `I_d`: 20–80 A in 1 A steps. Frequency is the outer-loop variable's inner index (loop order: current outer, frequency inner).
+- Used for the dense 3-D surface visualization (paper Fig. 9) and for offline PINN training (paper Fig. 10). Trained weights are saved as `vsc1_pinn_{comp}.pt`.
+
+### `vsc2_sparse_dataset1.csv`
+
+- 200 unstructured random points for VSC II: `f ~ U(1, 100)` Hz, `I_d ~ U(20, 80)` A.
+- Gaussian measurement noise added to each admittance column, with standard deviation equal to 2 % of that column's standard deviation.
+- Seed: `rng(42)`.
+- Used for sparse-data visualization (paper Fig. 11), conventional-ANN baselines (Variant A: unified 8-output network; Variant B: four element-specific networks), and as the online transfer-learning set (paper Figs. 12–13).
+
+### `vsc2_dense_dataset1.csv`
+
+- Clean 100 × 51 grid (5,100 rows) for VSC II: 100 frequencies from `linspace(1, 100)` Hz and 51 currents from `linspace(20, 80)` A. Loop order: frequency outer, current inner.
+- Ground-truth validation mesh. Used to compute magnitude and phase error surfaces (paper Figs. 13–14).
+
+---
+
+## Group B — Time-domain step-response datasets (notebooks 02 and 03)
+
+All datasets in this group use the **6-state time-domain model**: states `[i_d, i_q, ξ_d, ξ_q, θ_pll, ξ_pll]`, inputs `[V_d, V_q]` (grid-voltage perturbation, global dq frame), outputs `[i_d, i_q]`. The model is evaluated with `lsim`.
+
+### Common acquisition settings
+
+| Setting | Value |
+|---|---|
+| Sampling rate `Fs` | 2500 Hz |
+| Record length | 0.98 s (2450 samples) |
+| Step instant | `t = 0.1 s` |
+| Step size | 1 V (small-signal) |
+| Event 1 | step on `V_d`, `V_q = 0` |
+| Event 2 | step on `V_q`, `V_d = 0` |
+
+### Per-system files
+
+For system `NNNNN`:
+
+| File | Content |
+|---|---|
+| `sys_NNNNN_SNR_Inf.csv` | clean record |
+| `sys_NNNNN_SNR_<dB>.csv` | noisy record at that SNR |
+| `sys_NNNNN_Ytrue.mat` | ground truth: `Y_true` (2×2×N_f complex), `freqs_Hz`, and the physical parameters `Lf, Rf, Kp_i, Ki_i, Kp_pll, Ki_pll, Id_eq, Iq_eq` |
+| `manifest.csv` | `sys_id, Id_eq, Iq_eq, ytrue_file` |
+
+CSV columns:
+
+```
+time, id_ev1, iq_ev1, id_ev2, iq_ev2
+```
+
+`id_ev1, iq_ev1` are the currents after the `V_d` step; `id_ev2, iq_ev2` after the `V_q` step.
+
+### Frequency grid of `Y_true`
+
+For the family datasets and `vsc_data_out777`, the grid is non-uniform to resolve the resonance band: 60 points over 1–35 Hz, 2000 points over 35–75 Hz and 60 points over 75–100 Hz (duplicates removed). `vsc_data_out4` uses 100 points from `linspace(1, 100)` Hz.
+
+### `training_data_out777/` (notebook 03)
+
+- 3,000 systems. SNR levels: 30, 20, 10, 5 dB plus clean.
+- Each system is a draw from the VSC I parameter family: `L_f, R_f, K_p_i, K_i_i, K_p_pll, K_i_pll` sampled uniformly within ±50 % of their VSC I nominal values, `I_d_eq ~ U(0, 100)` A, `I_q_eq ~ U(−50, 50)` A. Unstable draws are skipped.
+- Seed: `rng(7)`.
+- Used to train `PhysicsParameterNet` (targets: the eight physical parameters, log-scaled).
+
+### `training_data_out_worse_quality/` (notebooks 02 and 03)
+
+- 150 systems drawn with the same parameter ranges as above. SNR levels: 30, 28, 26 dB plus clean. Seed: `rng(13)`.
+- Used for the **data-scarcity benchmark** (150 systems vs 3,000). Noise stays at normal levels, so only the data quantity changes.
+
+### `vsc_data_out777/` and `vsc_data_out4/` (reference converter)
+
+Reference VSC I at `I_d = 50 A`, `I_q = 0`, nominal parameters (`L_f = 1 mH`, `R_f = 0.3 mΩ`, `K_p_i = 10.5`, `K_i_i = 5900`, `K_p_pll = 1.2`, `K_i_pll = 257`).
+
+- Files: `VSC_I_Id_50_SNR_<30|20|15|10|5>.csv`, `VSC_I_Id_50_SNR_Inf.csv`, and `VSC_I_admittance_groundtruth.mat` (`Y_true`, `freqs_Hz`, `Id_equilibrium`, `Iq_equilibrium`).
+- Seed: `rng(42)`.
+- `VSC_I_Id_50_SNR_15.csv` is the primary held-out test signal for time-domain step responses, transient RMSE (0–50 ms and 0–150 ms) and the physics-loss weight sweep. The other SNR files are used for the Bode reconstruction sweep.
+- `vsc_data_out777` is the second revision of this set. `vsc_data_out4` is the first revision and is kept because notebook 02 reads it.
+- The generator can also produce a VSC II variant (`vsc_name = "VSC_II"`), which is a simplified LCL model.
+
+### `vsc_data_noise_profiles_out1/` (test only)
+
+Five VSC I records at `I_d = 50 A`, all at SNR = 15 dB, differing only in noise statistics. Seed: `rng(99)`. **Do not train on these files**; they exist to test zero-shot generalization.
+
+```
+VSC_I_Id_50_NOISEPROFILE_gaussian_white_SNR_15.csv
+VSC_I_Id_50_NOISEPROFILE_pink_1f_SNR_15.csv
+VSC_I_Id_50_NOISEPROFILE_uniform_SNR_15.csv
+VSC_I_Id_50_NOISEPROFILE_correlated_ar1_SNR_15.csv
+VSC_I_Id_50_NOISEPROFILE_impulsive_SNR_15.csv
+```
+
+### `training_data_out/` (optional, generic baseline)
+
+Produced by `gen_train_random_linear_systems.m`. Random stable linear systems of order 4–10 built from real companion blocks (natural frequency 1–200 Hz, damping ratio 0.05–0.5, plus one real pole for odd order), random `B` and `C`, `D = 0`. SNR levels 30, 20, 10, 5 dB; `manifest.csv` holds `sys_id, order, ytrue_file`; `Y_true` is on a 500-point 1–100 Hz grid. This set is not tied to a VSC structure.
+
+---
+
+## Noise model and SNR definition
+
+Noise is added **at generation time**, to the simulated sensor output (`i_d`, `i_q`), sample by sample. It is never added later in Python, so training and test noise come from the same model.
+
+For each channel independently:
+
+1. Signal power `P_s` is the variance of the channel over the post-step segment (`t ≥ 0.1 s`).
+2. Noise power is `P_n = P_s / 10^(SNR_dB/10)`.
+3. White Gaussian noise with variance `P_n` is added to the whole record.
+
+The same function, `add_sensor_noise`, is used in every generator.
+
+## Noise profiles
+
+Each profile is generated as a unit-variance sequence and then scaled to the target SNR, so all profiles are directly comparable at 15 dB.
+
+| Profile | Construction |
+|---|---|
+| `gaussian_white` | i.i.d. Gaussian (training-noise baseline) |
+| `pink_1f` | white noise through a leaky integrator, `1 / (1 − 0.99 z⁻¹)`, mean removed |
+| `uniform` | i.i.d. uniform distribution |
+| `correlated_ar1` | AR(1) with coefficient φ = 0.8 |
+| `impulsive` | Gaussian base (σ = 0.3) plus spikes of amplitude σ = 8 on about 1 % of samples |
+
+## Regenerating the data
+
+From the `matlab/` folder:
+
+```matlab
+addpath(genpath(pwd))
+
+% Group A
+run('data_generation/zhang2023/gen_vsc1_dense_dataset.m')
+run('data_generation/zhang2023/gen_vsc2_sparse_and_dense_datasets.m')
+
+% Group B
+run('data_generation/timedomain/gen_train_vsc_family_3000.m')
+run('data_generation/timedomain/gen_train_vsc_family_scarce150.m')
+run('data_generation/timedomain/gen_ref_vsc_stepresponse.m')
+run('data_generation/timedomain/gen_test_noise_profiles.m')
+```
+
+Requirements: MATLAB with Control System Toolbox. Seeds are fixed in each script, so reruns reproduce the same samples on the same MATLAB release.
+
+The full 3,000-system training set writes several thousand CSV files. Allow several GB of disk space and compress the folder before moving it.
+
+## Expected local layout
+
+The notebooks read zip archives (as used in Colab). Place the archives, or the extracted folders, in one directory and set the path at the top of each notebook:
+
+```
+data/
+├── vsc1_dense_dataset.csv
+├── vsc2_sparse_dataset1.csv
+├── vsc2_dense_dataset1.csv
+├── training_data_out5.zip
+├── training_data_out777.zip
+├── training_data_out_worse_quality.zip
+├── vsc_data_out4.zip
+├── vsc_data_out777.zip
+└── vsc_data_noise_profiles_out1.zip
+```
+
+The folder is listed in `.gitignore`, except for this README.

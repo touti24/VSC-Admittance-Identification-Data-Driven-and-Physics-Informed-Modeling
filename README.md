@@ -109,11 +109,11 @@ The notebooks were developed in Google Colab and read their datasets from zip ar
 ### 1. Python environment
 
 ```bash
-git clone https://github.com/<your-username>/vsc-admittance-identification.git
+git clone https://github.com/touti24/vsc-admittance-identification.git
 cd vsc-admittance-identification
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+
 ```
 
 ### 2. Get the data
@@ -182,7 +182,7 @@ The values below are taken from the internship report. Figures are in `docs/figu
 - The training sets in `training_data_out5`, `training_data_out777` and the scarce set are VSC parameter families (±50 % around VSC I, with randomized operating points). A generic random-linear-system generator (`gen_train_random_linear_systems.m`) is provided but is not part of the notebooks' main experiments.
 - Generalization to VSC II in the time-domain pipeline uses a simplified VSC II model. A broader set of unseen converter topologies is needed to support structure-agnostic claims.
 - GNC-based stability validation and hardware-in-the-loop experiments from the original paper were not reproduced.
-- Simulink models (`VSC1_switching.slx`, `VSC1_average.slx`) were saved in MATLAB release `<R20XXx>`.
+- Simulink models (`VSC1_switching.slx`, `VSC1_average.slx`) were saved in MATLAB release `<R2024b>`.
 
 
 

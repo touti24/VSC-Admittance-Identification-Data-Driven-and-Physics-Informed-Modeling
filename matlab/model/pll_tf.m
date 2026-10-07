@@ -1,46 +1,41 @@
 function GPLL = pll_tf(Kp_pll, Ki_pll, Vd_ss)
 % =========================================================================
 % pll_tf.m
+% Linearized Synchronous Reference Frame PLL (SRF-PLL) Transfer Function
 %
-% Builds the linearised SRF-PLL transfer function as a MATLAB tf object.
+% Description:
+%   Constructs the closed-loop small-signal transfer function of an SRF-PLL:
 %
-% From Eq. (3) of Zhang et al. 2023:
+%                 Kp_pll * s + Ki_pll
+%     GPLL(s) = --------------------------------------------
+%               s^2 + (Kp_pll * Vd_ss) * s + (Ki_pll * Vd_ss)
 %
-%   GPLL(s) = (Kp_pll * s + Ki_pll)
-%             ─────────────────────────────────────────
-%             s^2 + (Kp_pll * Vd_ss) * s + Ki_pll * Vd_ss
+% Reference:
+%   Zhang, Xu & Wang, "Physics-Informed Neural Network-Based Online Impedance
+%   Identification of Voltage Source Converters," IEEE TIE, 2023 (Eq. 3).
 %
-% DERIVATION NOTE:
-%   The PLL PI controller is: C_pll(s) = Kp_pll + Ki_pll/s
-%   The plant (voltage to phase) is: 1/s (integrator × Vd_ss)
-%   The closed-loop is: C(s)*Vd_ss / (s + C(s)*Vd_ss)
-%   which gives Eq. 3 after simplification.
+% Inputs:
+%   Kp_pll - Proportional gain of the PLL PI controller [rad/(V*s)]
+%   Ki_pll - Integral gain of the PLL PI controller [rad/(V*s^2)]
+%   Vd_ss  - Steady-state d-axis voltage at PCC [V] (nominal peak ~ 311 V)
 %
-% INPUTS:
-%   Kp_pll  — PLL proportional gain
-%   Ki_pll  — PLL integral gain
-%   Vd_ss   — steady-state d-axis voltage at PCC [V]
-%              (= sqrt(2)*220 = 311 V for PLL-aligned operation)
-%
-% OUTPUT:
-%   GPLL    — MATLAB tf object (Control System Toolbox)
-%
-% USAGE:
-%   GPLL = pll_tf(1.2, 257, 311);
-%   bode(GPLL);    % check PLL bandwidth
+% Outputs:
+%   GPLL   - Linear continuous-time transfer function (MATLAB tf object)
 % =========================================================================
 
-    num = [Kp_pll,  Ki_pll];
-    den = [1,  Kp_pll * Vd_ss,  Ki_pll * Vd_ss];
+    %% 1. Polynomial Formulation
+    num = [Kp_pll, Ki_pll];
+    den = [1, Kp_pll * Vd_ss, Ki_pll * Vd_ss];
 
+    %% 2. Transfer Function Construction
     GPLL = tf(num, den);
 
-    % Print PLL bandwidth for sanity check
-    % Crossover frequency should be ~10-50 Hz for typical grid-connected VSC
+    %% 3. Bandwidth Verification
     try
         bw = bandwidth(GPLL);
-        fprintf('pll_tf: PLL bandwidth = %.1f Hz\n', bw / (2*pi));
+        fprintf('[pll_tf] Closed-loop PLL bandwidth: %.2f Hz\n', bw / (2 * pi));
     catch
-        % bandwidth() may not be available in all toolbox versions
+        % Fallback if Control System Toolbox bandwidth() is unavailable
     end
+
 end

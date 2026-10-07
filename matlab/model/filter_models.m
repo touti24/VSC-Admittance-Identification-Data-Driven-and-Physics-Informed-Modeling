@@ -1,95 +1,75 @@
 function [Yp, Yo] = filter_models(filter_type, params)
 % =========================================================================
 % filter_models.m
+% Continuous-Time Converter and Grid Interface Filter Transfer Functions
 %
-% Returns the filter admittance transfer functions Yp(s) and Yo(s)
-% as MATLAB tf objects, for use in the analytical admittance model.
+% Description:
+%   Constructs continuous-time admittance transfer functions Yp(s) and Yo(s)
+%   for small-signal impedance/admittance modeling of grid-connected VSCs:
+%     - 'L'   : Single-inductor interface filter (standard L-filter).
+%     - 'LCL' : Third-order LCL filter with capacitor current feedback
+%               active damping.
 %
-% The paper uses two filter topologies:
-%   'L'   — single inductor (VSC I and VSC II)
-%   'LCL' — LCL filter with capacitor-current active damping (Phase 6)
+% Reference:
+%   Zhang, Xu & Wang, "Physics-Informed Neural Network-Based Online Impedance
+%   Identification of Voltage Source Converters," IEEE TIE, 2023.
+%   Pan et al., "An Improved Capacitor-Current Active Damping for LCL-Filter,"
+%   IEEE TPEL, 2015.
 %
-% ROLE IN EQ. (12):
-%   Yp(s) = admittance seen from the converter output (inverter side)
-%   Yo(s) = admittance seen from the PCC (grid side)
-%   For L-filter: Yp = Yo = 1/(Lf*s + Rf)
-%   For LCL:      Yp = grid-side admittance, Yo = converter-side admittance
-%                 (more complex — see LCL section below)
+% Inputs:
+%   filter_type - String specifying filter topology: 'L' or 'LCL'
+%   params      - Struct containing hardware parameters:
+%                   For 'L':
+%                     .Lf : Inverter-side filter inductance [H]
+%                     .Rf : Filter equivalent series resistance [Ohm]
+%                   For 'LCL':
+%                     .Lf : Inverter-side filter inductance [H]
+%                     .Rf : Inverter-side series resistance [Ohm]
+%                     .L2 : Grid-side filter inductance [H]
+%                     .Cf : Filter capacitance [F]
+%                     .Kd : Active damping feedback gain [Ohm]
 %
-% INPUTS:
-%   filter_type — 'L' or 'LCL'  (string)
-%   params      — struct:
-%     For 'L':
-%       .Lf   [H]    inverter inductor
-%       .Rf   [Ohm]  parasitic resistance
-%     For 'LCL' (additional fields):
-%       .L2   [H]    grid-side inductor
-%       .Cf   [F]    filter capacitor
-%       .Kd         active damping gain (capacitor current feedback)
-%
-% OUTPUTS:
-%   Yp  — MATLAB tf object  (converter-side admittance)
-%   Yo  — MATLAB tf object  (grid-side / PCC admittance)
-%
-% USAGE:
-%   params = struct('Lf',1e-3,'Rf',3e-4);
-%   [Yp, Yo] = filter_models('L', params);
-%   bode(Yp);
+% Outputs:
+%   Yp          - Inverter-side admittance transfer function Yp(s) (MATLAB tf)
+%   Yo          - Grid-side (PCC) admittance transfer function Yo(s) (MATLAB tf)
 % =========================================================================
 
-    switch lower(filter_type)
+    switch lower(string(filter_type))
 
-        % ── L-FILTER (VSC I and VSC II) ───────────────────────────────────
-        case 'l'
+        %% 1. L-FILTER TOPOLOGY
+        case "l"
             Lf = params.Lf;
             Rf = params.Rf;
 
-            % Yp(s) = 1 / (Lf*s + Rf)
+            % Converter-side and grid-side admittances are identical
+            % Yp(s) = Yo(s) = 1 / (Lf*s + Rf)
             Yp = tf(1, [Lf, Rf]);
-
-            % For L-filter: Yo = Yp (single branch, no capacitor)
             Yo = Yp;
 
-            fprintf('filter_models: L-filter | Lf=%.2f mH | Rf=%.3f mOhm\n', ...
-                    Lf*1e3, Rf*1e3);
+            fprintf("[filter_models] L-Filter initialized: Lf = %.2f mH, Rf = %.3f mOhm\n", ...
+                    Lf * 1e3, Rf * 1e3);
 
-        % ── LCL-FILTER WITH ACTIVE DAMPING (Phase 6) ──────────────────────
-        % Structure: Converter → L1(=Lf,Rf) → Capacitor Cf → L2 → Grid
-        % Active damping: capacitor current ×Kd fed back to subtract from
-        % modulation voltage (reduces the resonance peak without dissipation)
-        case 'lcl'
-            Lf = params.Lf;     % converter-side inductor [H]
-            Rf = params.Rf;     % converter-side parasitic [Ohm]
-            L2 = params.L2;     % grid-side inductor [H]   (= 3 mH, paper §IV-B)
-            Cf = params.Cf;     % filter capacitor [F]     (= 5 µF, paper §IV-B)
-            Kd = params.Kd;     % active damping gain      (= 10, assumption)
+        %% 2. LCL-FILTER TOPOLOGY (WITH ACTIVE DAMPING)
+        case "lcl"
+            Lf = params.Lf;     % Inverter-side inductance [H]
+            Rf = params.Rf;     % Inverter-side series resistance [Ohm]
+            L2 = params.L2;     % Grid-side inductance [H]
+            Cf = params.Cf;     % Shunt capacitance [F]
+            Kd = params.Kd;     % Capacitor-current active damping gain [Ohm]
 
-            % Without active damping, LCL admittance (converter-side):
-            %   Yp_nodamp = Cf*s / (Lf*Cf*s^2 + Rf*Cf*s + 1) ... complex
-            %
-            % With capacitor-current active damping, the effective admittance
-            % is modified. For the impedance measurement purposes we use
-            % the output admittance (grid-side):
-            %
-            %   Yo(s) = 1 / (L2*s + Lf*s + Rf + Kd)
-            %   (simplified: active damping acts like an added series resistance Kd)
-            %
-            % NOTE: This is an approximation. For full derivation see
-            % Fig. 16 of the paper and Ref [16] (Pan et al. 2015).
-
-            % Converter-side admittance (simplified with active damping)
-            % Yp(s) = 1/(Lf*s + Rf + Kd)
+            % Inverter-side admittance with active damping emulation
+            % Yp(s) = 1 / (Lf*s + Rf + Kd)
             Yp = tf(1, [Lf, Rf + Kd]);
 
-            % Grid-side admittance
-            % Yo(s) = 1/(L2*s)  ... grid-side inductor only (no damping on grid side)
+            % Grid-side admittance (un-damped inductive grid interface)
+            % Yo(s) = 1 / (L2*s)
             Yo = tf(1, [L2, 0]);
 
-            fprintf('filter_models: LCL-filter | Lf=%.0f mH | L2=%.0f mH | Cf=%.0f uF | Kd=%.0f\n', ...
-                    Lf*1e3, L2*1e3, Cf*1e6, Kd);
-            fprintf('  NOTE: Active damping modelled as series resistance Kd=%.0f Ohm (approximation)\n', Kd);
+            fprintf("[filter_models] LCL-Filter initialized: Lf = %.2f mH, L2 = %.2f mH, Cf = %.1f uF, Kd = %.1f Ohm\n", ...
+                    Lf * 1e3, L2 * 1e3, Cf * 1e6, Kd);
 
         otherwise
-            error('filter_models: unknown filter type ''%s''. Use ''L'' or ''LCL''.', filter_type);
+            error("[filter_models] Unknown filter topology '%s'. Valid options are 'L' or 'LCL'.", filter_type);
     end
+
 end
